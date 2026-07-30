@@ -1,0 +1,45 @@
+#cloud-config
+# OPTIONAL — for adding a WORKER to an already-running cluster later, not for the
+# initial bring-up (leave that to configuration management, which can sequence the
+# manager init before any join).
+#
+# To use it, select this template for a node's user_data in main.tf and pass
+# TF_VAR_swarm_worker_join_token plus the manager's private IP. Joins idempotently
+# ("join only if not already in a swarm") so a re-run or a reboot is harmless.
+hostname: ${hostname}
+preserve_hostname: false
+
+write_files:
+  - path: /usr/local/bin/swarm-join.sh
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      if ! command -v docker >/dev/null 2>&1; then
+        curl -fsSL https://get.docker.com | sh
+        systemctl enable --now docker
+      fi
+      if docker info 2>/dev/null | grep -q "Swarm: active"; then
+        exit 0
+      fi
+      docker swarm join --token "${join_token}" "${swarm_manager_ip}:2377"
+
+  - path: /etc/systemd/system/swarm-join.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=One-shot Docker Swarm join
+      After=network-online.target docker.service
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/swarm-join.sh
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  - [ bash, -lc, "systemctl daemon-reload" ]
+  - [ bash, -lc, "systemctl enable --now swarm-join.service" ]

@@ -1,0 +1,22 @@
+# Terraform state — never commit. State can contain secrets in plaintext.
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+.terraform/
+.terraform.tfstate.lock.info
+crash.log
+crash.*.log
+
+# Real variable files and backend configs. Only the example.* ones are tracked.
+*.tfvars
+*.tfvars.json
+!env/example.tfvars
+!env/example.minimal.tfvars
+env/*.backend.hcl
+!env/example.backend.hcl
+
+# Plan output can also contain secrets
+*.tfplan
+plan.out
+
+.DS_Store

@@ -1,0 +1,44 @@
+#cloud-config
+# Minimal, role-agnostic bootstrap: install Docker, create the admin user, basic
+# host prep. NO Swarm join, NO app deploy, NO SSH hardening here — configuration
+# management owns cluster membership, node labels, database clustering, stack
+# deploy, and hardening.
+#
+# Hardening deliberately happens AFTER apply rather than in cloud-init: a bad
+# sshd change baked into first boot locks you out of a fresh VM with no recourse.
+hostname: ${hostname}
+preserve_hostname: false
+
+package_update: true
+package_upgrade: false
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - chrony
+  - fail2ban
+  - unattended-upgrades
+
+write_files:
+  - path: /etc/docker/daemon.json
+    permissions: "0644"
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": { "max-size": "20m", "max-file": "5" }
+      }
+
+runcmd:
+  # Docker Engine + compose plugin (official convenience script)
+  - [ bash, -lc, "command -v docker >/dev/null 2>&1 || curl -fsSL https://get.docker.com | sh" ]
+  - [ bash, -lc, "systemctl enable --now docker" ]
+  # Non-root admin user, mirroring root's injected authorized_keys
+  - [ bash, -lc, "id -u ${ssh_user} >/dev/null 2>&1 || useradd -m -s /bin/bash -G sudo,docker ${ssh_user}" ]
+  - [ bash, -lc, "install -d -m 0700 -o ${ssh_user} -g ${ssh_user} /home/${ssh_user}/.ssh" ]
+  - [ bash, -lc, "cp /root/.ssh/authorized_keys /home/${ssh_user}/.ssh/authorized_keys 2>/dev/null || true" ]
+  - [ bash, -lc, "chown ${ssh_user}:${ssh_user} /home/${ssh_user}/.ssh/authorized_keys 2>/dev/null || true" ]
+  - [ bash, -lc, "chmod 600 /home/${ssh_user}/.ssh/authorized_keys 2>/dev/null || true" ]
+  - [ bash, -lc, "printf '${ssh_user} ALL=(ALL) NOPASSWD:ALL\\n' > /etc/sudoers.d/90-${ssh_user} && chmod 440 /etc/sudoers.d/90-${ssh_user}" ]
+  # Time sync (Swarm raft and database failover are both clock-sensitive)
+  - [ bash, -lc, "timedatectl set-ntp true || true" ]
+  - [ bash, -lc, "systemctl enable --now chrony fail2ban" ]
